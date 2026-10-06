@@ -76,6 +76,11 @@ st.markdown(
         box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.4) !important;
     }
 
+    /* Live Progress Bar Custom Emerald Glow */
+    .stProgress > div > div > div > div {
+        background-color: #10B981 !important;
+    }
+
     .top-terminal-bar {
         display: flex;
         justify-content: space-between;
@@ -284,8 +289,6 @@ client = genai.Client(api_key=api_key) if api_key else genai.Client()
 
 if "parsed_data" not in st.session_state:
     st.session_state.parsed_data = None
-if "pipeline_audit" not in st.session_state:
-    st.session_state.pipeline_audit = None
 if "active_bytes" not in st.session_state:
     st.session_state.active_bytes = None
 if "active_name" not in st.session_state:
@@ -328,7 +331,6 @@ with col1:
             st.session_state.active_bytes = raw_bytes
             st.session_state.active_name = uploaded_file.name
             st.session_state.parsed_data = None
-            st.session_state.pipeline_audit = None
             
             fname_lower = uploaded_file.name.lower()
             if fname_lower.endswith(".pdf"):
@@ -362,7 +364,6 @@ with col1:
             st.session_state.active_mime = "image/png"
             st.session_state.active_metric = "1 FRAME (CLIPBOARD STREAM)"
             st.session_state.parsed_data = None
-            st.session_state.pipeline_audit = None
 
     if st.session_state.active_bytes is not None:
         file_size_mb = len(st.session_state.active_bytes) / (1024 * 1024)
@@ -409,13 +410,11 @@ with col1:
             st.session_state.active_mime = None
             st.session_state.active_metric = None
             st.session_state.parsed_data = None
-            st.session_state.pipeline_audit = None
             st.session_state.uploader_key += 1
             st.session_state.paste_key += 1
             st.rerun()
     else:
         st.session_state.parsed_data = None
-        st.session_state.pipeline_audit = None
         st.markdown(
             """
             <div style="border: 2px dashed #1E293B; border-radius: 6px; padding: 60px 16px; text-align: center; color: #64748B; font-family: 'JetBrains Mono', monospace; font-size: 13px;">
@@ -438,8 +437,33 @@ with col2:
         parsed_result = None
         last_exception = None
 
-        with st.status("Executing Multimodal TMS Intake Pipeline...", expanded=True) as status_tracker:
-            st.write("⚡ Step 1/4: Decomposing document layers & normalizing raster resolution...")
+        # Dedicated dynamic placeholder for animations & active progress
+        activity_slot = st.empty()
+
+        with activity_slot.container():
+            st.markdown(
+                """
+                <div style="background: #0E1626; border: 1px solid #1E293B; border-left: 4px solid #10B981; border-radius: 6px; padding: 16px; margin-bottom: 12px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                        <span style="font-family: 'JetBrains Mono', monospace; font-weight: 700; color: #34D399; font-size: 13px; letter-spacing: 0.05em;">
+                            ⚡ RUNNING MULTIMODAL INGESTION PIPELINE
+                        </span>
+                        <span id="elapsed_counter" style="font-family: 'JetBrains Mono', monospace; font-weight: 700; color: #38BDF8; font-size: 12px;">
+                            ACTIVE TELEMETRY
+                        </span>
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            prog_bar = st.progress(5)
+            step_text = st.empty()
+
+            step_text.markdown(
+                '<div style="font-family:\'JetBrains Mono\'; font-size:12.5px; color:#94A3B8;">▶ [1/4] Normalizing raster layers and preparing payload memory...</div>',
+                unsafe_allow_html=True,
+            )
+            prog_bar.progress(20)
 
             if st.session_state.active_mime == "application/pdf":
                 try:
@@ -456,7 +480,11 @@ with col2:
             else:
                 payload_bytes = st.session_state.active_bytes
 
-            st.write("⚡ Step 2/4: Classifying across 4-umbrella taxonomy & extracting structured entities...")
+            prog_bar.progress(35)
+            step_text.markdown(
+                '<div style="font-family:\'JetBrains Mono\'; font-size:12.5px; color:#38BDF8;">▶ [2/4] Parsing document vision across 4-umbrella taxonomy & extracting line items...</div>',
+                unsafe_allow_html=True,
+            )
 
             umbrella_prompt = (
                 "You are an enterprise intake parser for a global logistics and freight forwarding TMS (BLU4U). "
@@ -504,6 +532,7 @@ with col2:
                 success = False
                 for attempt in range(1, 3):
                     try:
+                        prog_bar.progress(55)
                         response = client.models.generate_content(
                             model=target_model,
                             contents=[
@@ -533,48 +562,29 @@ with col2:
                 if success:
                     break
 
-            st.write("⚡ Step 3/4: Executing 3-way reconciliation audit (arithmetic, metric weights, seal validation)...")
+            prog_bar.progress(85)
+            step_text.markdown(
+                '<div style="font-family:\'JetBrains Mono\'; font-size:12.5px; color:#FBBF24;">▶ [3/4] Performing automated 3-way reconciliation audit (arithmetic, metric weights, seal validation)...</div>',
+                unsafe_allow_html=True,
+            )
+            time.sleep(0.4)
+
+            prog_bar.progress(100)
+            step_text.markdown(
+                '<div style="font-family:\'JetBrains Mono\'; font-size:12.5px; color:#34D399;">▶ [4/4] Serializing typed JSON staging payload (POST /api/v1/shipments/stage)...</div>',
+                unsafe_allow_html=True,
+            )
             time.sleep(0.3)
 
-            st.write("⚡ Step 4/4: Serializing typed JSON staging payload (POST /api/v1/shipments/stage)...")
-            elapsed = time.time() - start_time
-
-            if parsed_result:
-                status_tracker.update(
-                    label=f"Intake & Reconciliation Complete ({elapsed:.1f}s elapsed — Sub-minute Verified)",
-                    state="complete",
-                    expanded=False,
-                )
-                st.session_state.pipeline_audit = {
-                    "elapsed": elapsed,
-                    "model": target_model,
-                }
-            else:
-                status_tracker.update(
-                    label="Ingestion Pipeline Fault",
-                    state="error",
-                    expanded=True,
-                )
+        # Clear the entire activity slot so that ONLY the final cards and results appear!
+        activity_slot.empty()
 
         if parsed_result:
             st.session_state.parsed_data = parsed_result
         else:
             st.error(f"Ingestion Pipeline Fault: {last_exception}")
 
-    # Persistent Pipeline Audit Container (Renders even on subsequent script reruns)
-    if st.session_state.parsed_data and st.session_state.pipeline_audit:
-        audit_info = st.session_state.pipeline_audit
-        with st.status(
-            f"Pipeline Execution Complete ({audit_info['elapsed']:.1f}s — Sub-minute Verified)",
-            state="complete",
-            expanded=False,
-        ):
-            st.write("✓ Step 1/4: Binary stream rasterized & normalized.")
-            st.write(f"✓ Step 2/4: Zero-shot multimodal extraction completed via `{audit_info['model']}`.")
-            st.write("✓ Step 3/4: 3-way reconciliation audit cleared (line items, weights, seal integrity).")
-            st.write("✓ Step 4/4: Strict JSON schema emitted for staging (POST /api/v1/shipments/stage).")
-
-    # Render Dynamically Based on the 4 Umbrella Categories
+    # Render Final Extracted Content (Clean View — Zero Progress Clutter)
     if st.session_state.parsed_data:
         d = st.session_state.parsed_data
         cat = d.get("umbrella_category", "TRANSPORT_AND_TITLE").upper()
