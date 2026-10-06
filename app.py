@@ -2,6 +2,7 @@ import io
 import json
 import os
 import time
+import concurrent.futures
 import streamlit as st
 from dotenv import load_dotenv
 
@@ -302,6 +303,41 @@ if "uploader_key" not in st.session_state:
 if "paste_key" not in st.session_state:
     st.session_state.paste_key = 0
 
+# ---------------------------------------------------------
+# Background Worker Function for API Call
+# ---------------------------------------------------------
+def run_model_inference(payload_bytes, mime_type, prompt):
+    candidate_models = ["gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.5-flash-lite"]
+    last_err = None
+    for target_model in candidate_models:
+        for attempt in range(1, 3):
+            try:
+                response = client.models.generate_content(
+                    model=target_model,
+                    contents=[
+                        types.Part.from_bytes(data=payload_bytes, mime_type=mime_type),
+                        prompt,
+                    ],
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                        temperature=0.0,
+                    ),
+                )
+                if response and response.text:
+                    raw_text = response.text.strip()
+                    if raw_text.startswith("```"):
+                        lines = raw_text.splitlines()
+                        raw_text = "\n".join(lines[1:-1] if lines[-1].startswith("```") else lines[1:])
+                    return json.loads(raw_text), None
+            except Exception as e:
+                last_err = e
+                err_str = str(e)
+                if "503" in err_str or "429" in err_str:
+                    time.sleep(1.5 * attempt)
+                else:
+                    break
+    return None, last_err
+
 col1, col2 = st.columns([35, 65], gap="medium")
 
 # ---------------------------------------------------------
@@ -434,149 +470,132 @@ with col2:
 
     if st.session_state.active_bytes is not None and process_btn:
         start_time = time.time()
-        parsed_result = None
-        last_exception = None
 
-        # Dedicated dynamic placeholder for animations & active progress
+        if st.session_state.active_mime == "application/pdf":
+            try:
+                reader = PdfReader(io.BytesIO(st.session_state.active_bytes))
+                writer = PdfWriter()
+                pages_to_keep = min(3, len(reader.pages))
+                for i in range(pages_to_keep):
+                    writer.add_page(reader.pages[i])
+                trimmed_buf = io.BytesIO()
+                writer.write(trimmed_buf)
+                payload_bytes = trimmed_buf.getvalue()
+            except Exception:
+                payload_bytes = st.session_state.active_bytes
+        else:
+            payload_bytes = st.session_state.active_bytes
+
+        umbrella_prompt = (
+            "You are an enterprise intake parser for a global logistics and freight forwarding TMS (BLU4U). "
+            "Analyze this document image or PDF carefully.\n\n"
+            "STEP 1: Classify `umbrella_category` into exactly ONE of the following 4 options:\n"
+            "1. 'COMMERCIAL_AND_FINANCIAL' (Commercial Invoices, Proforma Invoices, Freight Invoices, Rate Confirmations, Debit/Credit Memos)\n"
+            "2. 'TRANSPORT_AND_TITLE' (Ocean Bills of Lading, Sea Waybills, Air Waybills, CMR Consignment Notes, Delivery Orders)\n"
+            "3. 'CARGO_SPECS_AND_MANIFESTS' (Packing Lists, Stowage Manifests, SOLAS VGM Certificates, Marine Survey & Rigging Reports)\n"
+            "4. 'CUSTOMS_AND_COMPLIANCE' (Customs Declarations/ATLAS/SAD, Certificates of Origin, IMDG Hazmat Declarations, Phytosanitary/Fumigation Certs)\n\n"
+            "STEP 2: Extract the data into clean JSON adhering to these exact field names:\n"
+            "General Header (Always required):\n"
+            "  umbrella_category (str: one of the 4 exact names above)\n"
+            "  specific_document_type (str: e.g. 'Ocean Bill of Lading', 'Commercial Invoice', 'Packing List', 'EUR.1 Origin Certificate')\n"
+            "  primary_reference_number (str: e.g. B/L #, Invoice #, PO #, SAD #)\n"
+            "  issuing_date (str)\n"
+            "  principal_issuer (str: Shipper, Carrier, Forwarder, or Authority issuing the document)\n"
+            "  principal_recipient (str: Consignee, Importer, Buyer, or Destination party)\n\n"
+            "Category 1 (COMMERCIAL_AND_FINANCIAL):\n"
+            "  total_invoiced_amount (float or str), currency (str, e.g. EUR, USD, GBP), "
+            "  payment_due_terms (str, e.g. Net 30, Collect, Prepaid), declared_incoterms (str, e.g. FOB, CIF, DDP + Place), "
+            "  buyer_seller_tax_ids (str, VAT/EORI/EIN), fee_or_line_breakdown (str).\n\n"
+            "Category 2 (TRANSPORT_AND_TITLE):\n"
+            "  carrier_or_vessel_details (str, Vessel Name, Voyage #, IMO, or Airline/Trucker), "
+            "  port_or_place_of_loading (str, POL / Origin), port_or_place_of_discharge (str, POD / Destination), "
+            "  container_and_seal_numbers (str), freight_charges_basis (str, Prepaid or Collect), "
+            "  place_and_terms_of_delivery (str).\n\n"
+            "Category 3 (CARGO_SPECS_AND_MANIFESTS):\n"
+            "  total_piece_and_package_count (str, e.g. 14 Crates / 40ft HC), gross_weight_kg (str), net_weight_kg (str), "
+            "  total_volume_cbm (str), physical_dimensions_summary (str), "
+            "  technical_constraints_oog_vgm (str, SOLAS VGM method, Center of Gravity, Out-of-Gauge, Crane load limits).\n\n"
+            "Category 4 (CUSTOMS_AND_COMPLIANCE):\n"
+            "  hs_tariff_codes (str, 6 to 10-digit Harmonized System codes), certified_country_of_origin (str), "
+            "  customs_office_or_filing_ref (str), hazard_imdg_un_code (str, UN number, IMDG class, flashpoint or 'Non-Hazardous'), "
+            "  regulatory_endorsements_permits (str, e.g. ISPM 15, EUR.1 preference, Dual-Use license status).\n\n"
+            "Universal Audit Field:\n"
+            "  audit_discrepancy_flags (str, flag any internal arithmetic discrepancy, missing stamps, weight variance, or state 'Clean verified').\n\n"
+            "Extract ONLY real factual data present in this document. Use 'N/A' if a field is not present.\n"
+            "Return raw, valid JSON only without Markdown formatting or backticks."
+        )
+
+        # Container dedicated to the live animation
         activity_slot = st.empty()
 
-        with activity_slot.container():
-            st.markdown(
-                """
-                <div style="background: #0E1626; border: 1px solid #1E293B; border-left: 4px solid #10B981; border-radius: 6px; padding: 16px; margin-bottom: 12px;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                        <span style="font-family: 'JetBrains Mono', monospace; font-weight: 700; color: #34D399; font-size: 13px; letter-spacing: 0.05em;">
-                            ⚡ RUNNING MULTIMODAL INGESTION PIPELINE
-                        </span>
-                        <span id="elapsed_counter" style="font-family: 'JetBrains Mono', monospace; font-weight: 700; color: #38BDF8; font-size: 12px;">
-                            ACTIVE TELEMETRY
-                        </span>
-                    </div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-            prog_bar = st.progress(5)
-            step_text = st.empty()
+        # Phase-based dynamic telemetry stages
+        stages = [
+            (0.08, "▶ [1/6] Ingesting binary stream & rasterizing document coordinate layers..."),
+            (0.24, "▶ [2/6] Decomposing table structures, invoice line-items, and OCR zones..."),
+            (0.42, "▶ [3/6] Classifying trade document across 4-core BLU4U taxonomy umbrellas..."),
+            (0.60, "▶ [4/6] Executing multimodal zero-shot feature extraction across key entities..."),
+            (0.78, "▶ [5/6] Performing automated 3-way reconciliation audit (weights, arithmetic, seals)..."),
+            (0.92, "▶ [6/6] Validating typed JSON schema for TMS asynchronous staging endpoint..."),
+        ]
 
-            step_text.markdown(
-                '<div style="font-family:\'JetBrains Mono\'; font-size:12.5px; color:#94A3B8;">▶ [1/4] Normalizing raster layers and preparing payload memory...</div>',
-                unsafe_allow_html=True,
-            )
-            prog_bar.progress(20)
+        # Launch model call in a concurrent background worker thread
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        future = executor.submit(run_model_inference, payload_bytes, st.session_state.active_mime, umbrella_prompt)
 
-            if st.session_state.active_mime == "application/pdf":
-                try:
-                    reader = PdfReader(io.BytesIO(st.session_state.active_bytes))
-                    writer = PdfWriter()
-                    pages_to_keep = min(3, len(reader.pages))
-                    for i in range(pages_to_keep):
-                        writer.add_page(reader.pages[i])
-                    trimmed_buf = io.BytesIO()
-                    writer.write(trimmed_buf)
-                    payload_bytes = trimmed_buf.getvalue()
-                except Exception:
-                    payload_bytes = st.session_state.active_bytes
+        # Dynamic UI feedback loop while background thread runs
+        while not future.done():
+            elapsed = time.time() - start_time
+            
+            # Select realistic stage text based on elapsed duration
+            if elapsed < 2.5:
+                progress_val = min(0.25, 0.05 + (elapsed / 2.5) * 0.20)
+                stage_label = stages[0][1]
+            elif elapsed < 6.0:
+                progress_val = min(0.45, 0.25 + ((elapsed - 2.5) / 3.5) * 0.20)
+                stage_label = stages[1][1]
+            elif elapsed < 11.0:
+                progress_val = min(0.65, 0.45 + ((elapsed - 6.0) / 5.0) * 0.20)
+                stage_label = stages[2][1]
+            elif elapsed < 17.0:
+                progress_val = min(0.82, 0.65 + ((elapsed - 11.0) / 6.0) * 0.17)
+                stage_label = stages[3][1]
+            elif elapsed < 24.0:
+                progress_val = min(0.92, 0.82 + ((elapsed - 17.0) / 7.0) * 0.10)
+                stage_label = stages[4][1]
             else:
-                payload_bytes = st.session_state.active_bytes
+                progress_val = min(0.96, 0.92 + ((elapsed - 24.0) / 10.0) * 0.04)
+                stage_label = stages[5][1]
 
-            prog_bar.progress(35)
-            step_text.markdown(
-                '<div style="font-family:\'JetBrains Mono\'; font-size:12.5px; color:#38BDF8;">▶ [2/4] Parsing document vision across 4-umbrella taxonomy & extracting line items...</div>',
-                unsafe_allow_html=True,
-            )
+            # Re-render live container frame
+            with activity_slot.container():
+                st.markdown(
+                    f"""
+                    <div style="background: #0E1626; border: 1px solid #1E293B; border-left: 4px solid #10B981; border-radius: 6px; padding: 14px 18px; margin-bottom: 12px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                            <span style="font-family: 'JetBrains Mono', monospace; font-weight: 700; color: #34D399; font-size: 13px; letter-spacing: 0.05em;">
+                                ⚡ EXECUTING MULTIMODAL TMS INTAKE PIPELINE
+                            </span>
+                            <span style="font-family: 'JetBrains Mono', monospace; font-weight: 700; color: #38BDF8; font-size: 12px;">
+                                T+{elapsed:04.1f}s ACTIVE
+                            </span>
+                        </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+                st.progress(int(progress_val * 100))
+                st.markdown(
+                    f'<div style="font-family:\'JetBrains Mono\'; font-size:12.5px; color:#F8FAFC; margin-top:6px;">{stage_label}</div>',
+                    unsafe_allow_html=True,
+                )
 
-            umbrella_prompt = (
-                "You are an enterprise intake parser for a global logistics and freight forwarding TMS (BLU4U). "
-                "Analyze this document image or PDF carefully.\n\n"
-                "STEP 1: Classify `umbrella_category` into exactly ONE of the following 4 options:\n"
-                "1. 'COMMERCIAL_AND_FINANCIAL' (Commercial Invoices, Proforma Invoices, Freight Invoices, Rate Confirmations, Debit/Credit Memos)\n"
-                "2. 'TRANSPORT_AND_TITLE' (Ocean Bills of Lading, Sea Waybills, Air Waybills, CMR Consignment Notes, Delivery Orders)\n"
-                "3. 'CARGO_SPECS_AND_MANIFESTS' (Packing Lists, Stowage Manifests, SOLAS VGM Certificates, Marine Survey & Rigging Reports)\n"
-                "4. 'CUSTOMS_AND_COMPLIANCE' (Customs Declarations/ATLAS/SAD, Certificates of Origin, IMDG Hazmat Declarations, Phytosanitary/Fumigation Certs)\n\n"
-                "STEP 2: Extract the data into clean JSON adhering to these exact field names:\n"
-                "General Header (Always required):\n"
-                "  umbrella_category (str: one of the 4 exact names above)\n"
-                "  specific_document_type (str: e.g. 'Ocean Bill of Lading', 'Commercial Invoice', 'Packing List', 'EUR.1 Origin Certificate')\n"
-                "  primary_reference_number (str: e.g. B/L #, Invoice #, PO #, SAD #)\n"
-                "  issuing_date (str)\n"
-                "  principal_issuer (str: Shipper, Carrier, Forwarder, or Authority issuing the document)\n"
-                "  principal_recipient (str: Consignee, Importer, Buyer, or Destination party)\n\n"
-                "Category 1 (COMMERCIAL_AND_FINANCIAL):\n"
-                "  total_invoiced_amount (float or str), currency (str, e.g. EUR, USD, GBP), "
-                "  payment_due_terms (str, e.g. Net 30, Collect, Prepaid), declared_incoterms (str, e.g. FOB, CIF, DDP + Place), "
-                "  buyer_seller_tax_ids (str, VAT/EORI/EIN), fee_or_line_breakdown (str).\n\n"
-                "Category 2 (TRANSPORT_AND_TITLE):\n"
-                "  carrier_or_vessel_details (str, Vessel Name, Voyage #, IMO, or Airline/Trucker), "
-                "  port_or_place_of_loading (str, POL / Origin), port_or_place_of_discharge (str, POD / Destination), "
-                "  container_and_seal_numbers (str), freight_charges_basis (str, Prepaid or Collect), "
-                "  place_and_terms_of_delivery (str).\n\n"
-                "Category 3 (CARGO_SPECS_AND_MANIFESTS):\n"
-                "  total_piece_and_package_count (str, e.g. 14 Crates / 40ft HC), gross_weight_kg (str), net_weight_kg (str), "
-                "  total_volume_cbm (str), physical_dimensions_summary (str), "
-                "  technical_constraints_oog_vgm (str, SOLAS VGM method, Center of Gravity, Out-of-Gauge, Crane load limits).\n\n"
-                "Category 4 (CUSTOMS_AND_COMPLIANCE):\n"
-                "  hs_tariff_codes (str, 6 to 10-digit Harmonized System codes), certified_country_of_origin (str), "
-                "  customs_office_or_filing_ref (str), hazard_imdg_un_code (str, UN number, IMDG class, flashpoint or 'Non-Hazardous'), "
-                "  regulatory_endorsements_permits (str, e.g. ISPM 15, EUR.1 preference, Dual-Use license status).\n\n"
-                "Universal Audit Field:\n"
-                "  audit_discrepancy_flags (str, flag any internal arithmetic discrepancy, missing stamps, weight variance, or state 'Clean verified').\n\n"
-                "Extract ONLY real factual data present in this document. Use 'N/A' if a field is not present.\n"
-                "Return raw, valid JSON only without Markdown formatting or backticks."
-            )
+            time.sleep(0.1)
 
-            # Prioritized Cascade: Latest SOTA Flash -> Standard Flash -> High-Throughput Flash-Lite
-            candidate_models = ["gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.5-flash-lite"]
+        # Retrieve result from completed future
+        parsed_result, last_exception = future.result()
+        executor.shutdown(wait=False)
 
-            for target_model in candidate_models:
-                success = False
-                for attempt in range(1, 3):
-                    try:
-                        prog_bar.progress(55)
-                        response = client.models.generate_content(
-                            model=target_model,
-                            contents=[
-                                types.Part.from_bytes(data=payload_bytes, mime_type=st.session_state.active_mime),
-                                umbrella_prompt,
-                            ],
-                            config=types.GenerateContentConfig(
-                                response_mime_type="application/json",
-                                temperature=0.0,
-                            ),
-                        )
-                        if response and response.text:
-                            raw_text = response.text.strip()
-                            if raw_text.startswith("```"):
-                                lines = raw_text.splitlines()
-                                raw_text = "\n".join(lines[1:-1] if lines[-1].startswith("```") else lines[1:])
-                            parsed_result = json.loads(raw_text)
-                            success = True
-                            break
-                    except Exception as e:
-                        last_exception = e
-                        err_str = str(e)
-                        if "503" in err_str or "429" in err_str:
-                            time.sleep(2.0 * attempt)
-                        else:
-                            break
-                if success:
-                    break
-
-            prog_bar.progress(85)
-            step_text.markdown(
-                '<div style="font-family:\'JetBrains Mono\'; font-size:12.5px; color:#FBBF24;">▶ [3/4] Performing automated 3-way reconciliation audit (arithmetic, metric weights, seal validation)...</div>',
-                unsafe_allow_html=True,
-            )
-            time.sleep(0.4)
-
-            prog_bar.progress(100)
-            step_text.markdown(
-                '<div style="font-family:\'JetBrains Mono\'; font-size:12.5px; color:#34D399;">▶ [4/4] Serializing typed JSON staging payload (POST /api/v1/shipments/stage)...</div>',
-                unsafe_allow_html=True,
-            )
-            time.sleep(0.3)
-
-        # Clear the entire activity slot so that ONLY the final cards and results appear!
+        # Completely clear the dynamic telemetry activity box so only clean final results remain
         activity_slot.empty()
 
         if parsed_result:
