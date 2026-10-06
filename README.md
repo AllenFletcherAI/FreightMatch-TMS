@@ -1,134 +1,123 @@
-<div align="center">
+# FreightMatch-TMS
 
-# FreightMatch-TMS // Autonomous Logistics Intake Engine
-
-**Deterministic Multimodal Document Parsing & 3-Way Reconciliation for Enterprise Transportation Management Systems (TMS)**
-
-[![Live Interactive App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://freightmatch-tms.streamlit.app)
-[![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-blue.svg)](https://www.python.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
-[![Target Interface: Enterprise TMS](https://img.shields.io/badge/Target-BLU4U%20%7C%20Enterprise%20TMS-orange.svg)]()
-
-[**Launch Live Interactive Pipeline ->**](https://freightmatch-tms.streamlit.app)
-
-</div>
+An easy-to-use document reader and checker for shipping and freight paperwork.
 
 ---
 
-## Overview
+## 1. What This Program Does
 
-In global project freight forwarding, maritime operations, and international logistics, manual intake of multi-party shipping documents represents the primary operational bottleneck to real-time cargo visibility and settlement integrity.
+When boxes and shipping containers travel across the ocean on big cargo ships, they come with lots of important papers:
+- **Bills of Lading:** Papers that prove who owns the boxes on the ship.
+- **Invoices:** Bills that show how much money items cost.
+- **Packing Lists:** Lists that count every single item and state its weight.
 
-**FreightMatch-TMS** is an enterprise-oriented multimodal document ingestion service engineered to ingest raw, uncalibrated transport and financial files, classify them across four core umbrella categories, extract structured logistics entities, execute automated 3-way reconciliation audits, and serialize staging payloads (`POST /api/v1/shipments/stage`) configured for direct asynchronous integration with modern TMS backends such as BLU4U.
+Normally, humans must read each paper by hand and type numbers into a computer one by one.
 
----
-
-## Key Functional Capabilities
-
-* **Adaptive 4-Umbrella Taxonomy:**
-  * **Commercial & Financial:** Commercial Invoices, Freight Billing Statements, Rate Cards.
-  * **Transport & Title:** Multimodal Ocean Bills of Lading (B/L), Sea Waybills, Air Waybills (AWB).
-  * **Cargo Specifications:** Packing Lists, Measurement Tallies, Out-of-Gauge (OOG) Stagger Sheets.
-  * **Customs & Statutory:** Export/Import Declarations, Certificates of Origin, Dangerous Goods (IMDG) filings.
-* **Deterministic Layout & Entity Extraction:** Parses dense raster images and multi-page PDFs to extract line-item totals, 6-digit Harmonized Tariff (HS) codes, ISO container numbers, seal verification checksums, metric gross/net weights, Incoterms 2020 definitions, vessel IMO identifiers, and port pairs.
-* **Automated 3-Way Reconciliation Engine:**
-  * **Arithmetic Consistency:** Audits line-item unit pricing and quantities against declared invoice totals and calculated taxes.
-  * **Metric Weight & Volume Discrepancies:** Detects variance across declared gross kg, net kg, and total cubic meters (CBM).
-  * **Regulatory & Statutory Integrity:** Flags missing endorsements, non-compliant container seals, and HS classification mismatches prior to settlement.
-* **TMS Staging Webhook Serialization:** Formats parsed and validated outputs into strict, typed JSON contracts designed for asynchronous integration with downstream staging tables.
+**FreightMatch-TMS** does this work automatically:
+1. It reads photos or PDF scans of the papers.
+2. It finds names, weights, prices, container numbers, and tax codes.
+3. It checks the math to make sure nobody made a mistake.
+4. It prepares clean data ready for shipping software to save.
 
 ---
 
-## System Architecture
+## 2. Try the Live Demo
 
-```text
- ┌────────────────────────────────────────────────────────┐
- │ Inbound Logistics Stream (Scanned Raster / Native PDF) │
- └───────────────────────────┬────────────────────────────┘
-                             │
-                             ▼
- ┌────────────────────────────────────────────────────────┐
- │ Multi-Modal Document Decomposition                     │
- │ (PyPDF Text Scrape + Raster High-Resolution Fallback)  │
- └───────────────────────────┬────────────────────────────┘
-                             │
-                             ▼
- ┌────────────────────────────────────────────────────────┐
- │ Adaptive Classification & Schema Routing               │
- │ (Deterministic Entity Extraction & JSON Enforcement)   │
- └───────────────────────────┬────────────────────────────┘
-                             │
-                             ▼
- ┌────────────────────────────────────────────────────────┐
- │ 3-Way Reconciliation & Verification Engine             │
- │ (Rate Variance, Weight Deltas, Seal Integrity Checks)  │
- └───────────────────────────┬────────────────────────────┘
-                             │
-                             ▼
- ┌────────────────────────────────────────────────────────┐
- │ Validated Staging Payload Ready for TMS Ingestion      │
- │ (POST /api/v1/shipments/stage)                         │
- └────────────────────────────────────────────────────────┘
+You can try the program right now in your web browser:
+
+👉 **[Click Here to Open the Live Demo](https://freightmatch-tms.streamlit.app)**
+
+1. Open the link above.
+2. Drag and drop any shipping paper or invoice into the upload box.
+3. Click the button to read the document.
+4. Watch the computer pull out all the details on screen.
+
+---
+
+## 3. How the Program Works in 4 Steps
+
+```
+[ Step 1: Upload Paper ]
+        │
+        ▼
+[ Step 2: Computer Vision Reads the Words ]
+        │
+        ▼
+[ Step 3: Math Checker Fixes Mistakes ]
+        │
+        ▼
+[ Step 4: Send Clean Data to Shipping System ]
 ```
 
----
-
-## Sample Testing Documents
-
-Test logistics documents are available directly in the `sample_documents/` directory:
-* `sample_documents/sample bill of ladling.webp` - Multimodal title transport document with container and seal numbers.
-* `sample_documents/sample commercial invoice.png` - Multi-line commercial freight invoice for arithmetic reconciliation.
-* `sample_documents/sample packing list.webp` - Metric cargo specification breakdown (gross vs. net weight / CBM).
-
-*Drag and drop any of these sample files into the [Live Interactive App](https://freightmatch-tms.streamlit.app) to evaluate the extraction pipeline in real time.*
+- **Step 1 (Upload Paper):** A user uploads a picture or a PDF file.
+- **Step 2 (Read Words):** An artificial intelligence model looks at the image and writes down every word and number.
+- **Step 3 (Check Math):** The computer adds up the numbers. If `Price x Quantity` does not equal `Total`, or if the cargo weights do not match, it shows a warning.
+- **Step 4 (Save Data):** The clean numbers are bundled together so any company database can store them safely.
 
 ---
 
-## Local Installation & Setup
+## 4. Test Files Included in This Project
 
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/AllenFletcherAI/FreightMatch-TMS.git
-   cd FreightMatch-TMS
-   ```
+Inside the `sample_documents` folder, there are 3 real sample files ready for testing:
 
-2. **Create and activate a virtual environment:**
-   ```bash
-   python -m venv venv
-   # On Windows:
-   venv\Scripts\activate
-   # On Linux/macOS:
-   source venv/bin/activate
-   ```
-
-3. **Install dependencies:**
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-4. **Configure environment:**
-   Create a `.env` file in the root directory:
-   ```env
-   GEMINI_API_KEY="your-gemini-api-key-here"
-   ```
-
-5. **Start the pipeline:**
-   ```bash
-   streamlit run app.py
-   ```
+1. `sample bill of ladling.webp` - A real shipping paper showing ship names and container box numbers.
+2. `sample commercial invoice.png` - A bill showing items, prices, and taxes.
+3. `sample packing list.webp` - A list showing box weights in kilograms.
 
 ---
 
-## Technology Stack
+## 5. How to Run This on Your Own Computer
 
-* **Core Runtime:** Python 3.11+
-* **Interface & Presentation:** Streamlit (Custom Dark Industrial Design System)
-* **Model Inference Engine:** Google GenAI Multimodal Vision Architecture
-* **Document Decomposition:** PyPDF, Pillow (PIL), NumPy
-* **Data Validation:** Strict JSON Schema Contracts
+Follow these 5 simple steps in your terminal or command prompt:
+
+### Step 1: Download the Project
+```bash
+git clone https://github.com/AllenFletcherAI/FreightMatch-TMS.git
+cd FreightMatch-TMS
+```
+
+### Step 2: Make a Safe Python Box
+```bash
+python -m venv venv
+```
+Now turn on the safe box:
+- On Windows:
+  ```bash
+  venv\Scripts\activate
+  ```
+- On Mac or Linux:
+  ```bash
+  source venv/bin/activate
+  ```
+
+### Step 3: Install the Tools
+```bash
+pip install -r requirements.txt
+```
+
+### Step 4: Add Your Secret Key
+Make a new file named `.env` and paste your key inside:
+```env
+GEMINI_API_KEY="your-key-goes-here"
+```
+
+### Step 5: Start the App
+```bash
+streamlit run app.py
+```
+Open your browser to `http://localhost:8501` to use the app.
 
 ---
 
-## License
+## 6. Tools Used
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+- **Python:** The main computer language used to build the program.
+- **Streamlit:** The tool that builds the buttons and web screen.
+- **Gemini Vision AI:** The artificial intelligence that reads text inside photos.
+- **PyPDF:** The tool that opens and reads PDF files.
+
+---
+
+## 7. License
+
+This project is free to use and study under the MIT License.
