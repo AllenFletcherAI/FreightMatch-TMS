@@ -1,123 +1,143 @@
-# FreightMatch-TMS
+# FreightMatch-TMS: Logistics Document Parser & Reconciliation Engine
 
-An easy-to-use document reader and checker for shipping and freight paperwork.
+An automated system that reads unstructured freight shipping documents, checks them for errors, and outputs clean, structured data for enterprise logistics software.
 
----
-
-## 1. What This Program Does
-
-When boxes and shipping containers travel across the ocean on big cargo ships, they come with lots of important papers:
-- **Bills of Lading:** Papers that prove who owns the boxes on the ship.
-- **Invoices:** Bills that show how much money items cost.
-- **Packing Lists:** Lists that count every single item and state its weight.
-
-Normally, humans must read each paper by hand and type numbers into a computer one by one.
-
-**FreightMatch-TMS** does this work automatically:
-1. It reads photos or PDF scans of the papers.
-2. It finds names, weights, prices, container numbers, and tax codes.
-3. It checks the math to make sure nobody made a mistake.
-4. It prepares clean data ready for shipping software to save.
+[Try the Live Web App](https://freightmatch-tms.streamlit.app) • [View GitHub Repository](https://github.com/AllenFletcherAI/FreightMatch-TMS)
 
 ---
 
-## 2. Try the Live Demo
+## What This Project Does
 
-You can try the program right now in your web browser:
+Shipping companies receive thousands of paper, PDF, and image files from around the world. People usually have to type this data by hand into databases, which causes delays and human error.
 
-👉 **[Click Here to Open the Live Demo](https://freightmatch-tms.streamlit.app)**
+FreightMatch-TMS automates this entire process:
 
-1. Open the link above.
-2. Drag and drop any shipping paper or invoice into the upload box.
-3. Click the button to read the document.
-4. Watch the computer pull out all the details on screen.
+1. **Reads Any File**: Accepts scanned pictures, PDFs, or photos of shipping records.
+2. **Sorts the Documents**: Automatically figures out if a file is an Invoice, Bill of Lading, Packing List, or Customs form.
+3. **Pulls Out the Data**: Reads container numbers, weights, prices, tax codes, and dates.
+4. **Checks for Mistakes (3-Way Matching)**: Compares the numbers across documents to catch missing stamps, math errors, or weight mismatches.
+5. **Prepares the Output**: Formats everything into a clean JSON message ready to send directly to central logistics software.
 
 ---
 
-## 3. How the Program Works in 4 Steps
+## System Flowchart
 
-```
-[ Step 1: Upload Paper ]
-        │
-        ▼
-[ Step 2: Computer Vision Reads the Words ]
-        │
-        ▼
-[ Step 3: Math Checker Fixes Mistakes ]
-        │
-        ▼
-[ Step 4: Send Clean Data to Shipping System ]
+Here is the exact path a file takes through the system:
+
+```text
+  [ Upload Document: Scanned Image or PDF ]
+                      │
+                      ▼
+  [ Step 1: Read File & Extract Text/Pixels ]
+                      │
+                      ▼
+  [ Step 2: Identify Document Type & Extract Fields ]
+                      │
+                      ▼
+  [ Step 3: Run Automatic Math & Consistency Checks ]
+                      │
+                      ▼
+  [ Step 4: Emit Final Structured JSON Data ]
 ```
 
-- **Step 1 (Upload Paper):** A user uploads a picture or a PDF file.
-- **Step 2 (Read Words):** An artificial intelligence model looks at the image and writes down every word and number.
-- **Step 3 (Check Math):** The computer adds up the numbers. If `Price x Quantity` does not equal `Total`, or if the cargo weights do not match, it shows a warning.
-- **Step 4 (Save Data):** The clean numbers are bundled together so any company database can store them safely.
+---
+
+## Document Types Handled
+
+The engine organizes files into four main groups:
+
+* **Commercial & Financial**: Invoices, payment requests, and price sheets.
+* **Transport & Title**: Bills of Lading, sea waybills, and airway bills.
+* **Cargo Specifications**: Packing manifests, weight sheets, and size records.
+* **Customs & Compliance**: Export papers, origin certificates, and safety sheets.
 
 ---
 
-## 4. Test Files Included in This Project
+## What the System Checks Automatically
 
-Inside the `sample_documents` folder, there are 3 real sample files ready for testing:
+Before saving any data, the engine checks for three common real-world problems:
 
-1. `sample bill of ladling.webp` - A real shipping paper showing ship names and container box numbers.
-2. `sample commercial invoice.png` - A bill showing items, prices, and taxes.
-3. `sample packing list.webp` - A list showing box weights in kilograms.
+* **Math Check**: Multiplies unit prices by quantities to ensure the total line items match the final balance and tax totals.
+* **Weight & Volume Check**: Compares gross weight (cargo plus container) against net weight (cargo only) to ensure weights and volumes make physical sense.
+* **Compliance Check**: Verifies that required official seal numbers, signatures, and international 6-digit tariff codes are present and valid.
 
 ---
 
-## 5. How to Run This on Your Own Computer
+## Testing With Sample Files
 
-Follow these 5 simple steps in your terminal or command prompt:
+Three test files are included inside the `sample_documents/` folder in this repository:
 
-### Step 1: Download the Project
+1. `sample_documents/sample commercial invoice.png`: Tests price calculations and line-item totals.
+2. `sample_documents/sample bill of ladling.webp`: Tests sea cargo title parsing and container number matching.
+3. `sample_documents/sample packing list.webp`: Tests weight, package counts, and cargo measurements.
+
+To test them without installing anything on your computer, open the [Live Demo](https://freightmatch-tms.streamlit.app) and drag any of these three files directly onto the screen.
+
+---
+
+## How to Run This Project on Your Computer
+
+Follow these 5 simple steps. You will need Python installed on your computer.
+
+### Step 1: Download the Code
+Open your terminal (Command Prompt on Windows or Terminal on Mac/Linux) and run:
+
 ```bash
 git clone https://github.com/AllenFletcherAI/FreightMatch-TMS.git
 cd FreightMatch-TMS
 ```
 
-### Step 2: Make a Safe Python Box
-```bash
-python -m venv venv
-```
-Now turn on the safe box:
-- On Windows:
-  ```bash
-  venv\Scripts\activate
-  ```
-- On Mac or Linux:
-  ```bash
-  source venv/bin/activate
-  ```
+### Step 2: Set Up an Isolated Python Environment
+Run this command to create and enter a clean workspace:
 
-### Step 3: Install the Tools
+```bash
+# Create the virtual environment
+python -m venv venv
+
+# Turn on the environment (Windows)
+venv\Scripts\activate
+
+# Turn on the environment (Mac or Linux)
+source venv/bin/activate
+```
+
+### Step 3: Install Required Libraries
+Run this command to install the required tools automatically:
+
 ```bash
 pip install -r requirements.txt
 ```
 
-### Step 4: Add Your Secret Key
-Make a new file named `.env` and paste your key inside:
+### Step 4: Add Your Gemini API Key
+Create a plain text file named `.env` in the main folder and add your key:
+
 ```env
-GEMINI_API_KEY="your-key-goes-here"
+GEMINI_API_KEY="your-gemini-api-key-goes-here"
 ```
 
-### Step 5: Start the App
+*(You can generate a free key at [Google AI Studio](https://aistudio.google.com/apikey).)*
+
+### Step 5: Start the Application
+Run this final command:
+
 ```bash
 streamlit run app.py
 ```
-Open your browser to `http://localhost:8501` to use the app.
+
+Your web browser will open automatically with the interface running locally at `http://localhost:8501`.
 
 ---
 
-## 6. Tools Used
+## Technology Stack
 
-- **Python:** The main computer language used to build the program.
-- **Streamlit:** The tool that builds the buttons and web screen.
-- **Gemini Vision AI:** The artificial intelligence that reads text inside photos.
-- **PyPDF:** The tool that opens and reads PDF files.
+* **Programming Language**: Python 3.11+
+* **User Interface**: Streamlit
+* **Document Processing**: PyPDF, Pillow (PIL), NumPy
+* **Vision & Extraction Engine**: Google Gemini API
+* **Data Contracts**: Standard JSON Schemas
 
 ---
 
-## 7. License
+## License
 
-This project is free to use and study under the MIT License.
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for full details.
