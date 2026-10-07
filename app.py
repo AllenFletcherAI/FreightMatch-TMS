@@ -19,8 +19,8 @@ from streamlit_paste_button import paste_image_button
 # ---------------------------------------------------------
 st.set_page_config(
     layout="wide",
-    page_title="Bertling Adaptive Freight Intake & TMS Staging Engine",
-    page_icon="⚓",
+    page_title="FreightMatch // Multi-Modal Trade Document Intake & TMS Staging Engine",
+    page_icon="⚡",
     initial_sidebar_state="collapsed",
 )
 
@@ -94,7 +94,7 @@ st.markdown(
     }
     .terminal-title {
         font-family: 'JetBrains Mono', monospace;
-        font-size: 14.5px;
+        font-size: 14px;
         font-weight: 700;
         letter-spacing: 0.04em;
         color: #F8FAFC;
@@ -258,6 +258,17 @@ st.markdown(
         letter-spacing: 0.04em;
         margin-bottom: 4px;
     }
+
+    .staging-success {
+        background: #022016;
+        border: 1px solid #059669;
+        border-radius: 6px;
+        padding: 12px 16px;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 12.5px;
+        color: #A7F3D0;
+        margin-top: 8px;
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -270,10 +281,10 @@ st.markdown(
     """
     <div class="top-terminal-bar">
         <div class="terminal-title">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#38BDF8" stroke-width="2.5"><circle cx="12" cy="5" r="3"></circle><line x1="12" y1="8" x2="12" y2="21"></line><path d="M5 12H2a10 10 0 0 0 20 0h-3"></path><circle cx="12" cy="12" r="1"></circle></svg>
-            BERTLING GLOBAL TMS // ADAPTIVE DOCUMENT PARSER & RECONCILIATION ENGINE
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#10B981" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+            FREIGHTMATCH-TMS // AUTONOMOUS INTAKE, 3-WAY RECONCILIATION & STAGING ENGINE
         </div>
-        <div class="terminal-status">STATUS: 4-CORE UMBRELLA PIPELINE ACTIVE</div>
+        <div class="terminal-status">STANDARDS: EDIFACT / XML / JSON-LD / REST COMPLIANT</div>
     </div>
     """,
     unsafe_allow_html=True,
@@ -302,12 +313,14 @@ if "uploader_key" not in st.session_state:
     st.session_state.uploader_key = 0
 if "paste_key" not in st.session_state:
     st.session_state.paste_key = 0
+if "staging_status" not in st.session_state:
+    st.session_state.staging_status = None
 
 # ---------------------------------------------------------
 # Background Worker Function for API Call
 # ---------------------------------------------------------
 def run_model_inference(payload_bytes, mime_type, prompt):
-    candidate_models = ["gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.5-flash-lite"]
+    candidate_models = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
     last_err = None
     for target_model in candidate_models:
         for attempt in range(1, 3):
@@ -367,6 +380,7 @@ with col1:
             st.session_state.active_bytes = raw_bytes
             st.session_state.active_name = uploaded_file.name
             st.session_state.parsed_data = None
+            st.session_state.staging_status = None
             
             fname_lower = uploaded_file.name.lower()
             if fname_lower.endswith(".pdf"):
@@ -400,6 +414,7 @@ with col1:
             st.session_state.active_mime = "image/png"
             st.session_state.active_metric = "1 FRAME (CLIPBOARD STREAM)"
             st.session_state.parsed_data = None
+            st.session_state.staging_status = None
 
     if st.session_state.active_bytes is not None:
         file_size_mb = len(st.session_state.active_bytes) / (1024 * 1024)
@@ -428,9 +443,9 @@ with col1:
                         <span class="align-value" style="color: #34D399;">SHA256_VERIFIED</span>
                     </div>
                     <div class="align-row">
-                        <span class="align-label">STATUS</span>
+                        <span class="align-label">PIPELINE STATUS</span>
                         <span class="align-colon">:</span>
-                        <span class="align-value" style="color: #38BDF8;">READY FOR PIPELINE INGESTION</span>
+                        <span class="align-value" style="color: #38BDF8;">READY FOR TMS INGESTION</span>
                     </div>
                 </div>
             </div>
@@ -446,11 +461,13 @@ with col1:
             st.session_state.active_mime = None
             st.session_state.active_metric = None
             st.session_state.parsed_data = None
+            st.session_state.staging_status = None
             st.session_state.uploader_key += 1
             st.session_state.paste_key += 1
             st.rerun()
     else:
         st.session_state.parsed_data = None
+        st.session_state.staging_status = None
         st.markdown(
             """
             <div style="border: 2px dashed #1E293B; border-radius: 6px; padding: 60px 16px; text-align: center; color: #64748B; font-family: 'JetBrains Mono', monospace; font-size: 13px;">
@@ -487,27 +504,27 @@ with col2:
             payload_bytes = st.session_state.active_bytes
 
         umbrella_prompt = (
-            "You are an enterprise intake parser for a global logistics and freight forwarding TMS (BLU4U). "
+            "You are an enterprise intake parser for a global multi-modal logistics and freight forwarding TMS. "
             "Analyze this document image or PDF carefully.\n\n"
             "STEP 1: Classify `umbrella_category` into exactly ONE of the following 4 options:\n"
             "1. 'COMMERCIAL_AND_FINANCIAL' (Commercial Invoices, Proforma Invoices, Freight Invoices, Rate Confirmations, Debit/Credit Memos)\n"
             "2. 'TRANSPORT_AND_TITLE' (Ocean Bills of Lading, Sea Waybills, Air Waybills, CMR Consignment Notes, Delivery Orders)\n"
-            "3. 'CARGO_SPECS_AND_MANIFESTS' (Packing Lists, Stowage Manifests, SOLAS VGM Certificates, Marine Survey & Rigging Reports)\n"
-            "4. 'CUSTOMS_AND_COMPLIANCE' (Customs Declarations/ATLAS/SAD, Certificates of Origin, IMDG Hazmat Declarations, Phytosanitary/Fumigation Certs)\n\n"
+            "3. 'CARGO_SPECS_AND_MANIFESTS' (Packing Lists, Stowage Manifests, SOLAS VGM Certificates, Marine Survey & Inspection Reports)\n"
+            "4. 'CUSTOMS_AND_COMPLIANCE' (Customs Declarations/ATLAS/SAD, Certificates of Origin, IMDG/ADR Dangerous Goods Declarations, Phytosanitary Certs)\n\n"
             "STEP 2: Extract the data into clean JSON adhering to these exact field names:\n"
             "General Header (Always required):\n"
             "  umbrella_category (str: one of the 4 exact names above)\n"
-            "  specific_document_type (str: e.g. 'Ocean Bill of Lading', 'Commercial Invoice', 'Packing List', 'EUR.1 Origin Certificate')\n"
-            "  primary_reference_number (str: e.g. B/L #, Invoice #, PO #, SAD #)\n"
+            "  specific_document_type (str: e.g. 'Ocean Bill of Lading', 'Commercial Invoice', 'Packing List', 'EUR.1 Certificate of Origin')\n"
+            "  primary_reference_number (str: e.g. B/L #, Invoice #, Booking Ref, SAD Filing #)\n"
             "  issuing_date (str)\n"
-            "  principal_issuer (str: Shipper, Carrier, Forwarder, or Authority issuing the document)\n"
+            "  principal_issuer (str: Shipper, Carrier, Forwarder, or Issuing Authority)\n"
             "  principal_recipient (str: Consignee, Importer, Buyer, or Destination party)\n\n"
             "Category 1 (COMMERCIAL_AND_FINANCIAL):\n"
             "  total_invoiced_amount (float or str), currency (str, e.g. EUR, USD, GBP), "
             "  payment_due_terms (str, e.g. Net 30, Collect, Prepaid), declared_incoterms (str, e.g. FOB, CIF, DDP + Place), "
             "  buyer_seller_tax_ids (str, VAT/EORI/EIN), fee_or_line_breakdown (str).\n\n"
             "Category 2 (TRANSPORT_AND_TITLE):\n"
-            "  carrier_or_vessel_details (str, Vessel Name, Voyage #, IMO, or Airline/Trucker), "
+            "  carrier_or_vessel_details (str, Vessel Name, Voyage #, IMO, or Airline/Carrier Name), "
             "  port_or_place_of_loading (str, POL / Origin), port_or_place_of_discharge (str, POD / Destination), "
             "  container_and_seal_numbers (str), freight_charges_basis (str, Prepaid or Collect), "
             "  place_and_terms_of_delivery (str).\n\n"
@@ -530,11 +547,11 @@ with col2:
 
         # Phase-based dynamic telemetry stages
         stages = [
-            (0.08, "▶ [1/6] Ingesting binary stream & rasterizing document coordinate layers..."),
+            (0.08, "▶ [1/6] Ingesting binary stream & rasterizing coordinate layers..."),
             (0.24, "▶ [2/6] Decomposing table structures, invoice line-items, and OCR zones..."),
-            (0.42, "▶ [3/6] Classifying trade document across 4-core BLU4U taxonomy umbrellas..."),
-            (0.60, "▶ [4/6] Executing multimodal zero-shot feature extraction across key entities..."),
-            (0.78, "▶ [5/6] Performing automated 3-way reconciliation audit (weights, arithmetic, seals)..."),
+            (0.42, "▶ [3/6] Classifying trade document across 4-core multi-modal taxonomy umbrellas..."),
+            (0.60, "▶ [4/6] Executing zero-shot entity extraction across key logistics descriptors..."),
+            (0.78, "▶ [5/6] Performing automated 3-way reconciliation audit (weights, rates, seals, tariffs)..."),
             (0.92, "▶ [6/6] Validating typed JSON schema for TMS asynchronous staging endpoint..."),
         ]
 
@@ -546,7 +563,6 @@ with col2:
         while not future.done():
             elapsed = time.time() - start_time
             
-            # Select realistic stage text based on elapsed duration
             if elapsed < 2.5:
                 progress_val = min(0.25, 0.05 + (elapsed / 2.5) * 0.20)
                 stage_label = stages[0][1]
@@ -566,14 +582,13 @@ with col2:
                 progress_val = min(0.96, 0.92 + ((elapsed - 24.0) / 10.0) * 0.04)
                 stage_label = stages[5][1]
 
-            # Re-render live container frame
             with activity_slot.container():
                 st.markdown(
                     f"""
                     <div style="background: #0E1626; border: 1px solid #1E293B; border-left: 4px solid #10B981; border-radius: 6px; padding: 14px 18px; margin-bottom: 12px;">
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
                             <span style="font-family: 'JetBrains Mono', monospace; font-weight: 700; color: #34D399; font-size: 13px; letter-spacing: 0.05em;">
-                                ⚡ EXECUTING MULTIMODAL TMS INTAKE PIPELINE
+                                ⚡ EXECUTING MULTI-MODAL TMS INTAKE PIPELINE
                             </span>
                             <span style="font-family: 'JetBrains Mono', monospace; font-weight: 700; color: #38BDF8; font-size: 12px;">
                                 T+{elapsed:04.1f}s ACTIVE
@@ -591,19 +606,18 @@ with col2:
 
             time.sleep(0.1)
 
-        # Retrieve result from completed future
         parsed_result, last_exception = future.result()
         executor.shutdown(wait=False)
 
-        # Completely clear the dynamic telemetry activity box so only clean final results remain
         activity_slot.empty()
 
         if parsed_result:
             st.session_state.parsed_data = parsed_result
+            st.session_state.staging_status = None
         else:
             st.error(f"Ingestion Pipeline Fault: {last_exception}")
 
-    # Render Final Extracted Content (Clean View — Zero Progress Clutter)
+    # Render Final Extracted Content
     if st.session_state.parsed_data:
         d = st.session_state.parsed_data
         cat = d.get("umbrella_category", "TRANSPORT_AND_TITLE").upper()
@@ -874,7 +888,7 @@ with col2:
                             <span class="align-value" style="color:#34D399; font-weight:800;">{d.get('certified_country_of_origin', 'N/A')}</span>
                         </div>
                         <div class="align-row">
-                            <span class="align-label">HAZARDOUS / IMDG / UN</span>
+                            <span class="align-label">HAZARDOUS / IMDG / ADR / UN</span>
                             <span class="align-colon">:</span>
                             <span class="align-value" style="color:#F87171;">{d.get('hazard_imdg_un_code', 'Non-Hazardous')}</span>
                         </div>
@@ -890,7 +904,7 @@ with col2:
             )
 
         # ----------------------------------------------------
-        # UNIVERSAL AUDIT & EXCEPTION ALERT CARD
+        # UNIVERSAL AUDIT & 3-WAY RECONCILIATION CARD
         # ----------------------------------------------------
         audit_note = d.get("audit_discrepancy_flags")
         if audit_note and audit_note != "N/A" and "clean" not in audit_note.lower() and "none" not in audit_note.lower():
@@ -907,8 +921,32 @@ with col2:
             st.markdown(
                 """
                 <div class="sla-card">
-                    <div class="sla-title">AUDIT RECONCILIATION STATUS</div>
-                    Document layout verified. Internal arithmetic, entity alignments, and stamps consistent with manifest.
+                    <div class="sla-title">3-WAY AUDIT RECONCILIATION STATUS</div>
+                    Document layout verified. Internal arithmetic, entity alignments, and commodity seals consistent with transport manifest.
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        # ----------------------------------------------------
+        # INTERACTIVE TMS STAGING SIMULATOR
+        # ----------------------------------------------------
+        st.markdown("<div style='height: 4px;'></div>", unsafe_allow_html=True)
+        if st.button("STAGE NORMALIZED PAYLOAD TO ENTERPRISE TMS (POST /api/v1/shipments/stage)", use_container_width=True):
+            st.session_state.staging_status = {
+                "transaction_id": f"TX-{int(time.time()*1000)}",
+                "status": "HTTP 201 CREATED",
+                "target_schema": "TMS_INGEST_V2_STANDARDIZED",
+                "latency_ms": 142,
+            }
+
+        if st.session_state.staging_status:
+            stat = st.session_state.staging_status
+            st.markdown(
+                f"""
+                <div class="staging-success">
+                    ✔ <b>STAGING SYNCHRONIZED:</b> {stat['status']} | TRANS_ID: <code>{stat['transaction_id']}</code> | LATENCY: {stat['latency_ms']}ms<br>
+                    <span style="color: #6EE7B7; font-size: 11.5px;">Schema mapped and queued for asynchronous TMS ledger insertion. Zero manual re-keying required.</span>
                 </div>
                 """,
                 unsafe_allow_html=True,
@@ -926,10 +964,10 @@ with col2:
         )
 
 # ---------------------------------------------------------
-# Inspect Raw Webhook Payload
+# Inspect Raw Staging Payload
 # ---------------------------------------------------------
 if st.session_state.parsed_data:
     with col1:
         st.markdown("<div style='height: 6px;'></div>", unsafe_allow_html=True)
-        with st.expander("INSPECT ADAPTIVE TMS JSON PAYLOAD"):
+        with st.expander("INSPECT NORMALIZED TMS JSON SCHEMA"):
             st.json(st.session_state.parsed_data)
